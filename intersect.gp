@@ -1,0 +1,177 @@
+// Package lo — predicate scans, keyed intersection, and exclusion helpers.
+//
+// Exact-compatibility reimplementations of samber/lo v1.53.0's deferred
+// intersect.go surface (plus the Keyify/Compact helpers they depend on, from
+// slice.go), authored in Go+ and differentially tested against pinned upstream.
+package lo
+
+// Keyify builds a set from a slice's elements.
+func Keyify[T comparable, Slice ~[]T](collection Slice) map[T]struct{} {
+	result := make(map[T]struct{}, len(collection))
+	for i := range collection {
+		result[collection[i]] = struct{}{}
+	}
+	return result
+}
+
+// Compact removes zero-value elements, preserving order.
+func Compact[T comparable, Slice ~[]T](collection Slice) Slice {
+	var zero T
+	result := make(Slice, 0, len(collection))
+	for i := range collection {
+		if collection[i] != zero {
+			result = append(result, collection[i])
+		}
+	}
+	return result
+}
+
+// ContainsBy reports whether any element satisfies the predicate.
+func ContainsBy[T any](collection []T, predicate func(item T) bool) bool {
+	for i := range collection {
+		if predicate(collection[i]) {
+			return true
+		}
+	}
+	return false
+}
+
+// EveryBy reports whether every element satisfies the predicate.
+func EveryBy[T any](collection []T, predicate func(item T) bool) bool {
+	for i := range collection {
+		if !predicate(collection[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// SomeBy reports whether at least one element satisfies the predicate.
+func SomeBy[T any](collection []T, predicate func(item T) bool) bool {
+	for i := range collection {
+		if predicate(collection[i]) {
+			return true
+		}
+	}
+	return false
+}
+
+// NoneBy reports whether no element satisfies the predicate.
+func NoneBy[T any](collection []T, predicate func(item T) bool) bool {
+	for i := range collection {
+		if predicate(collection[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// IntersectBy returns the elements of the first list, in order, whose key
+// (under transform) appears in every subsequent list.
+func IntersectBy[T any, K comparable, Slice ~[]T](transform func(T) K, lists ...Slice) Slice {
+	if len(lists) == 0 {
+		return Slice{}
+	}
+	last := lists[len(lists)-1]
+	seen := make(map[K]bool, len(last))
+	for _, item := range last {
+		seen[transform(item)] = false
+	}
+	for i := len(lists) - 2; i > 0 && len(seen) != 0; i-- {
+		for _, item := range lists[i] {
+			k := transform(item)
+			if _, ok := seen[k]; ok {
+				seen[k] = true
+			}
+		}
+		for k, v := range seen {
+			if v {
+				seen[k] = false
+			} else {
+				delete(seen, k)
+			}
+		}
+	}
+	result := make(Slice, 0, len(seen))
+	for _, item := range lists[0] {
+		k := transform(item)
+		if _, ok := seen[k]; ok {
+			result = append(result, item)
+			delete(seen, k)
+		}
+	}
+	return result
+}
+
+// WithoutBy returns the elements whose key is not in exclude.
+func WithoutBy[T any, K comparable, Slice ~[]T](collection Slice, iteratee func(item T) K, exclude ...K) Slice {
+	excludeMap := Keyify(exclude)
+	result := make(Slice, 0, len(collection))
+	for _, item := range collection {
+		if _, ok := excludeMap[iteratee(item)]; !ok {
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
+// WithoutByErr is WithoutBy with a fallible key projection.
+func WithoutByErr[T any, K comparable, Slice ~[]T](collection Slice, iteratee func(item T) (K, error), exclude ...K) (Slice, error) {
+	excludeMap := Keyify(exclude)
+	result := make(Slice, 0, len(collection))
+	for _, item := range collection {
+		key, err := iteratee(item)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := excludeMap[key]; !ok {
+			result = append(result, item)
+		}
+	}
+	return result, nil
+}
+
+// WithoutEmpty removes zero-value elements.
+func WithoutEmpty[T comparable, Slice ~[]T](collection Slice) Slice {
+	return Compact(collection)
+}
+
+// WithoutNth removes the elements at the given indices.
+func WithoutNth[T any, Slice ~[]T](collection Slice, nths ...int) Slice {
+	toRemove := Keyify(nths)
+	result := make(Slice, 0, len(collection))
+	for i := range collection {
+		if _, ok := toRemove[i]; !ok {
+			result = append(result, collection[i])
+		}
+	}
+	return result
+}
+
+// ElementsMatch reports whether two slices contain the same multiset of values.
+func ElementsMatch[T comparable, Slice ~[]T](list1, list2 Slice) bool {
+	return ElementsMatchBy(list1, list2, func(item T) T { return item })
+}
+
+// ElementsMatchBy reports whether two slices contain the same multiset of keys.
+func ElementsMatchBy[T any, K comparable](list1, list2 []T, iteratee func(item T) K) bool {
+	if len(list1) != len(list2) {
+		return false
+	}
+	if len(list1) == 0 {
+		return true
+	}
+	counters := make(map[K]int, len(list1))
+	for _, el := range list1 {
+		counters[iteratee(el)]++
+	}
+	for _, el := range list2 {
+		counters[iteratee(el)]--
+	}
+	for _, count := range counters {
+		if count != 0 {
+			return false
+		}
+	}
+	return true
+}

@@ -1,0 +1,102 @@
+// Package lo — dependency-free string helpers.
+//
+// Exact-compatibility reimplementations of the pure subset of samber/lo's
+// string.go (v1.53.0): the word splitter and its lower-case joiners, rune
+// length, byte-wise chunking, and ellipsis truncation. The x/text-backed
+// title-case helpers (Capitalize, CamelCase, PascalCase) and the private
+// substring/random helpers are intentionally excluded from this batch.
+package lo
+
+import (
+	"regexp"
+	"strings"
+	"unicode"
+	"unicode/utf8"
+)
+
+var (
+	splitWordReg = regexp.MustCompile(
+		`([a-z])([A-Z0-9])|([a-zA-Z])([0-9])|([0-9])([a-zA-Z])|([A-Z])([A-Z])([a-z])`)
+	splitNumberLetterReg = regexp.MustCompile(`([0-9])([a-zA-Z])`)
+)
+
+// RuneLength counts Unicode code points, unlike len which counts bytes.
+func RuneLength(str string) int {
+	return utf8.RuneCountInString(str)
+}
+
+// Words splits a string into its constituent words, breaking on case
+// transitions, letter/number boundaries, and any non-alphanumeric rune.
+func Words(str string) []string {
+	str = splitWordReg.ReplaceAllString(str, `$1$3$5$7 $2$4$6$8$9`)
+	str = splitNumberLetterReg.ReplaceAllString(str, "$1 $2")
+	var result strings.Builder
+	result.Grow(len(str))
+	for _, r := range str {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			result.WriteRune(r)
+		} else {
+			result.WriteRune(' ')
+		}
+	}
+	return strings.Fields(result.String())
+}
+
+// KebabCase joins the words of str in lower case with hyphens.
+func KebabCase(str string) string {
+	items := Words(str)
+	for i := range items {
+		items[i] = strings.ToLower(items[i])
+	}
+	return strings.Join(items, "-")
+}
+
+// SnakeCase joins the words of str in lower case with underscores.
+func SnakeCase(str string) string {
+	items := Words(str)
+	for i := range items {
+		items[i] = strings.ToLower(items[i])
+	}
+	return strings.Join(items, "_")
+}
+
+// ChunkString splits str into byte-wise chunks of the given size. It panics on
+// a non-positive size, matching upstream.
+func ChunkString[T ~string](str T, size int) []T {
+	if size <= 0 {
+		panic("lo.ChunkString: size must be greater than 0")
+	}
+	if size >= len(str) {
+		return []T{str}
+	}
+	chunks := make([]T, 0, ((len(str)-1)/size)+1)
+	currentLen := 0
+	currentStart := 0
+	for i := range str {
+		if currentLen == size {
+			chunks = append(chunks, str[currentStart:i])
+			currentLen = 0
+			currentStart = i
+		}
+		currentLen++
+	}
+	chunks = append(chunks, str[currentStart:])
+	return chunks
+}
+
+// Ellipsis trims str and, if longer than length, truncates it to fit within
+// length including a trailing "..." marker.
+func Ellipsis(str string, length int) string {
+	str = strings.TrimSpace(str)
+	const ellipsis = "..."
+	cutPosition := 0
+	for i := range str {
+		if length == len(ellipsis) {
+			cutPosition = i
+		}
+		if length--; length < 0 {
+			return strings.TrimSpace(str[:cutPosition]) + ellipsis
+		}
+	}
+	return str
+}

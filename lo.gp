@@ -1,0 +1,290 @@
+// Package lo is the deliberately bounded samber/lo compatibility facade for
+// GoForge's collection algebra. Exact-compatibility functions retain upstream
+// order and fresh-allocation behavior; the Into and total APIs expose the
+// stronger semantics used by new code.
+// Package lo is authored in Go+ and generated into portable Go.
+package lo
+
+import "goforge.dev/goplus/std/nonempty"
+
+type Entry[K comparable, V any] struct {
+	Key   K
+	Value V
+}
+
+func Map[T, R any](collection []T, transform func(T, int) R) []R {
+	return MapInto(make([]R, 0, len(collection)), collection, transform)
+}
+
+func MapInto[T, R any](dst []R, collection []T, transform func(T, int) R) []R {
+	for i, item := range collection {
+		dst = append(dst, transform(item, i))
+	}
+	return dst
+}
+
+func Filter[T any, Slice ~[]T](collection Slice, predicate func(T, int) bool) Slice {
+	return FilterInto(make(Slice, 0, len(collection)), collection, predicate)
+}
+
+func FilterInto[T any, Slice ~[]T](dst Slice, collection Slice, predicate func(T, int) bool) Slice {
+	for i, item := range collection {
+		if predicate(item, i) {
+			dst = append(dst, item)
+		}
+	}
+	return dst
+}
+
+func Reject[T any, Slice ~[]T](collection Slice, predicate func(T, int) bool) Slice {
+	return Filter(collection, func(item T, index int) bool { return !predicate(item, index) })
+}
+
+func FilterMap[T, R any](collection []T, transform func(T, int) (R, bool)) []R {
+	return FilterMapInto(make([]R, 0, len(collection)), collection, transform)
+}
+
+func FilterMapInto[T, R any](dst []R, collection []T, transform func(T, int) (R, bool)) []R {
+	for i, item := range collection {
+		if value, ok := transform(item, i); ok {
+			dst = append(dst, value)
+		}
+	}
+	return dst
+}
+
+func FlatMap[T, R any](collection []T, transform func(T, int) []R) []R {
+	out := []R{}
+	for i, item := range collection {
+		out = append(out, transform(item, i)...)
+	}
+	return out
+}
+
+func Reduce[T, R any](collection []T, accumulator func(R, T, int) R, initial R) R {
+	for i, item := range collection {
+		initial = accumulator(initial, item, i)
+	}
+	return initial
+}
+
+func ReduceRight[T, R any](collection []T, accumulator func(R, T, int) R, initial R) R {
+	for i := len(collection) - 1; i >= 0; i-- {
+		initial = accumulator(initial, collection[i], i)
+	}
+	return initial
+}
+
+func ReduceNonEmpty[T any](collection nonempty.NonEmpty[T], combine func(T, T) T) T {
+	return nonempty.Reduce1(collection, combine)
+}
+
+func ForEach[T any](collection []T, callback func(T, int)) {
+	for i, item := range collection {
+		callback(item, i)
+	}
+}
+
+func Times[T any](count int, iteratee func(int) T) []T {
+	if count <= 0 {
+		return []T{}
+	}
+	out := make([]T, count)
+	for i := range out {
+		out[i] = iteratee(i)
+	}
+	return out
+}
+
+func Uniq[T comparable, Slice ~[]T](collection Slice) Slice {
+	return UniqBy(collection, func(item T) T { return item })
+}
+
+func UniqBy[T any, U comparable, Slice ~[]T](collection Slice, key func(T) U) Slice {
+	out := make(Slice, 0, len(collection))
+	seen := make(map[U]struct{}, len(collection))
+	for _, item := range collection {
+		k := key(item)
+		if _, exists := seen[k]; exists {
+			continue
+		}
+		seen[k] = struct{}{}
+		out = append(out, item)
+	}
+	return out
+}
+
+func GroupBy[T any, K comparable, Slice ~[]T](collection Slice, key func(T) K) map[K]Slice {
+	out := make(map[K]Slice)
+	for _, item := range collection {
+		k := key(item)
+		out[k] = append(out[k], item)
+	}
+	return out
+}
+
+func GroupByMap[T any, K comparable, V any](collection []T, transform func(T) (K, V)) map[K][]V {
+	out := make(map[K][]V)
+	for _, item := range collection {
+		k, value := transform(item)
+		out[k] = append(out[k], value)
+	}
+	return out
+}
+
+func KeyBy[K comparable, V any](collection []V, key func(V) K) map[K]V {
+	out := make(map[K]V, len(collection))
+	for _, item := range collection {
+		out[key(item)] = item
+	}
+	return out
+}
+
+func Associate[T any, K comparable, V any](collection []T, transform func(T) (K, V)) map[K]V {
+	out := make(map[K]V, len(collection))
+	for _, item := range collection {
+		k, value := transform(item)
+		out[k] = value
+	}
+	return out
+}
+
+func Chunk[T any, Slice ~[]T](collection Slice, size int) []Slice {
+	if size <= 0 {
+		panic("lo: chunk size must be positive")
+	}
+	if len(collection) == 0 {
+		return []Slice{}
+	}
+	out := make([]Slice, 0, (len(collection)+size-1)/size)
+	for start := 0; start < len(collection); start += size {
+		end := min(start+size, len(collection))
+		chunk := make(Slice, end-start)
+		copy(chunk, collection[start:end])
+		out = append(out, chunk)
+	}
+	return out
+}
+
+func Window[T any, Slice ~[]T](collection Slice, size int) []Slice {
+	return Sliding(collection, size, 1)
+}
+
+func Sliding[T any, Slice ~[]T](collection Slice, size, step int) []Slice {
+	if size <= 0 || step <= 0 {
+		panic("lo: window size and step must be positive")
+	}
+	if size > len(collection) {
+		return []Slice{}
+	}
+	out := make([]Slice, 0, 1+(len(collection)-size)/step)
+	for start := 0; start+size <= len(collection); start += step {
+		window := make(Slice, size)
+		copy(window, collection[start:start+size])
+		out = append(out, window)
+	}
+	return out
+}
+
+func PartitionBy[T any, K comparable, Slice ~[]T](collection Slice, key func(T) K) []Slice {
+	if len(collection) == 0 {
+		return []Slice{}
+	}
+	out := make([]Slice, 0, 1)
+	positions := make(map[K]int)
+	for _, item := range collection {
+		current := key(item)
+		if position, exists := positions[current]; exists {
+			out[position] = append(out[position], item)
+		} else {
+			positions[current] = len(out)
+			out = append(out, Slice{item})
+		}
+	}
+	return out
+}
+
+func Flatten[T any, Slice ~[]T](collection []Slice) Slice { return Concat(collection...) }
+
+func Concat[T any, Slice ~[]T](collections ...Slice) Slice {
+	total := 0
+	for _, collection := range collections {
+		total += len(collection)
+	}
+	out := make(Slice, 0, total)
+	for _, collection := range collections {
+		out = append(out, collection...)
+	}
+	return out
+}
+
+func Interleave[T any, Slice ~[]T](collections ...Slice) Slice {
+	total, longest := 0, 0
+	for _, collection := range collections {
+		total += len(collection)
+		longest = max(longest, len(collection))
+	}
+	out := make(Slice, 0, total)
+	for i := 0; i < longest; i++ {
+		for _, collection := range collections {
+			if i < len(collection) {
+				out = append(out, collection[i])
+			}
+		}
+	}
+	return out
+}
+
+func Reverse[T any, Slice ~[]T](collection Slice) Slice {
+	for left, right := 0, len(collection)-1; left < right; left, right = left+1, right-1 {
+		collection[left], collection[right] = collection[right], collection[left]
+	}
+	return collection
+}
+
+// ReverseCopy is the semantic, alias-safe alternative to upstream-compatible
+// Reverse, whose historical contract mutates its input.
+func ReverseCopy[T any, Slice ~[]T](collection Slice) Slice {
+	out := make(Slice, len(collection))
+	copy(out, collection)
+	return Reverse(out)
+}
+
+func Drop[T any, Slice ~[]T](collection Slice, n int) Slice {
+	if n < 0 {
+		panic("lo.Drop: n must not be negative")
+	}
+	if n == 0 {
+		return append(Slice(nil), collection...)
+	}
+	if n >= len(collection) {
+		return Slice{}
+	}
+	return append(Slice(nil), collection[n:]...)
+}
+
+func DropRight[T any, Slice ~[]T](collection Slice, n int) Slice {
+	if n < 0 {
+		panic("lo.DropRight: n must not be negative")
+	}
+	if n == 0 {
+		return append(Slice(nil), collection...)
+	}
+	if n >= len(collection) {
+		return Slice{}
+	}
+	return append(Slice(nil), collection[:len(collection)-n]...)
+}
+
+func Take[T any, Slice ~[]T](collection Slice, n int) Slice {
+	if n < 0 {
+		panic("lo.Take: n must not be negative")
+	}
+	if n == 0 {
+		return Slice{}
+	}
+	if n > len(collection) {
+		n = len(collection)
+	}
+	return append(Slice(nil), collection[:n]...)
+}

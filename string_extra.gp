@@ -1,0 +1,87 @@
+// Package lo — character-set constants and rune-aware Substring.
+//
+// Adapted from samber/lo v1.53.0 string.go (MIT). The x/text-backed case
+// helpers (Capitalize/CamelCase/PascalCase) and the random RandomString remain
+// out of this batch; Substring and the charsets are pure.
+package lo
+
+import (
+	"strings"
+	"unicode/utf8"
+)
+
+var (
+	// LowerCaseLettersCharset is a-z.
+	LowerCaseLettersCharset = []rune("abcdefghijklmnopqrstuvwxyz")
+	// UpperCaseLettersCharset is A-Z.
+	UpperCaseLettersCharset = []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	// LettersCharset is a-zA-Z.
+	LettersCharset = append(LowerCaseLettersCharset, UpperCaseLettersCharset...)
+	// NumbersCharset is 0-9.
+	NumbersCharset = []rune("0123456789")
+	// AlphanumericCharset is letters and numbers.
+	AlphanumericCharset = append(LettersCharset, NumbersCharset...)
+	// SpecialCharset is common punctuation.
+	SpecialCharset = []rune("!@#$%^&*()_+-=[]{}|;':\",./<>?")
+	// AllCharset is alphanumeric plus punctuation.
+	AllCharset = append(AlphanumericCharset, SpecialCharset...)
+)
+
+// substring is the rune-aware slice used by Substring; it supports positive and
+// negative offsets and a rune length.
+func substring[T ~string](str T, offset int, length uint) T {
+	switch {
+	case length == 0, offset >= len(str):
+		return ""
+	case offset > 0:
+		for i, r := range str {
+			if offset--; offset == 0 {
+				str = str[i+utf8.RuneLen(r):]
+				break
+			}
+		}
+		if offset != 0 {
+			return ""
+		}
+		if uint(len(str)) <= length {
+			return str
+		}
+		fallthrough
+	case offset < -len(str), offset == 0:
+		for i := range str {
+			if length == 0 {
+				return str[:i]
+			}
+			length--
+		}
+		return str
+	default:
+		backwardPos := func(end int, count uint) (start int) {
+			for {
+				_, i := utf8.DecodeLastRuneInString(string(str[:end]))
+				end -= i
+				if count--; count == 0 || end == 0 {
+					return end
+				}
+			}
+		}
+		off := uint(-offset)
+		if off <= length {
+			start := backwardPos(len(str), off)
+			return str[start:]
+		}
+		end := backwardPos(len(str), off-length)
+		start := backwardPos(end, length)
+		return str[start:end]
+	}
+}
+
+// Substring returns the length runes of str beginning at offset (negative
+// offsets count from the end), stripping invalid UTF-8 and null bytes.
+func Substring[T ~string](str T, offset int, length uint) T {
+	str = substring(str, offset, length)
+	if !utf8.ValidString(string(str)) {
+		str = T([]rune(str))
+	}
+	return T(strings.ReplaceAll(string(str), "\x00", ""))
+}

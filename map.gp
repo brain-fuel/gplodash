@@ -1,0 +1,373 @@
+// Package lo — map transformation, filtering, and projection helpers.
+//
+// Exact-compatibility reimplementations of samber/lo v1.53.0 map.go deferred
+// surface, authored in Go+ and differentially tested against pinned upstream.
+package lo
+
+func Assign[K comparable, V any, Map ~map[K]V](maps ...Map) Map {
+	count := 0
+	for i := range maps {
+		count += len(maps[i])
+	}
+
+	out := make(Map, count)
+	for i := range maps {
+		for k, v := range maps[i] {
+			out[k] = v
+		}
+	}
+
+	return out
+}
+
+func ChunkEntries[K comparable, V any](m map[K]V, size int) []map[K]V {
+	if size <= 0 {
+		panic("lo.ChunkEntries: size must be greater than 0")
+	}
+
+	count := len(m)
+	if count == 0 {
+		return []map[K]V{}
+	}
+
+	result := make([]map[K]V, 0, ((count-1)/size)+1)
+
+	for k, v := range m {
+		if len(result) == 0 || len(result[len(result)-1]) == size {
+			result = append(result, make(map[K]V, size))
+		}
+
+		result[len(result)-1][k] = v
+	}
+
+	return result
+}
+
+func FilterKeys[K comparable, V any](in map[K]V, predicate func(key K, value V) bool) []K {
+	result := make([]K, 0)
+
+	for k, v := range in {
+		if predicate(k, v) {
+			result = append(result, k)
+		}
+	}
+
+	return result
+}
+
+func FilterKeysErr[K comparable, V any](in map[K]V, predicate func(key K, value V) (bool, error)) ([]K, error) {
+	result := make([]K, 0)
+
+	for k, v := range in {
+		ok, err := predicate(k, v)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			result = append(result, k)
+		}
+	}
+
+	return result, nil
+}
+
+func FilterMapToSlice[K comparable, V, R any](in map[K]V, iteratee func(key K, value V) (R, bool)) []R {
+	result := make([]R, 0, len(in))
+
+	for k, v := range in {
+		if v, ok := iteratee(k, v); ok {
+			result = append(result, v)
+		}
+	}
+
+	return result
+}
+
+func FilterMapToSliceErr[K comparable, V, R any](in map[K]V, iteratee func(key K, value V) (R, bool, error)) ([]R, error) {
+	result := make([]R, 0, len(in))
+
+	for k, v := range in {
+		r, ok, err := iteratee(k, v)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			result = append(result, r)
+		}
+	}
+
+	return result, nil
+}
+
+func FilterValues[K comparable, V any](in map[K]V, predicate func(key K, value V) bool) []V {
+	result := make([]V, 0)
+
+	for k, v := range in {
+		if predicate(k, v) {
+			result = append(result, v)
+		}
+	}
+
+	return result
+}
+
+func FilterValuesErr[K comparable, V any](in map[K]V, predicate func(key K, value V) (bool, error)) ([]V, error) {
+	result := make([]V, 0)
+
+	for k, v := range in {
+		ok, err := predicate(k, v)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			result = append(result, v)
+		}
+	}
+
+	return result, nil
+}
+
+func FromPairs[K comparable, V any](entries []Entry[K, V]) map[K]V {
+	return FromEntries(entries)
+}
+
+func HasKey[K comparable, V any](in map[K]V, key K) bool {
+	_, ok := in[key]
+	return ok
+}
+
+func Invert[K, V comparable](in map[K]V) map[V]K {
+	out := make(map[V]K, len(in))
+
+	for k, v := range in {
+		out[v] = k
+	}
+
+	return out
+}
+
+func MapEntries[K1 comparable, V1 any, K2 comparable, V2 any](in map[K1]V1, iteratee func(key K1, value V1) (K2, V2)) map[K2]V2 {
+	result := make(map[K2]V2, len(in))
+
+	for k1 := range in {
+		k2, v2 := iteratee(k1, in[k1])
+		result[k2] = v2
+	}
+
+	return result
+}
+
+func MapEntriesErr[K1 comparable, V1 any, K2 comparable, V2 any](in map[K1]V1, iteratee func(key K1, value V1) (K2, V2, error)) (map[K2]V2, error) {
+	result := make(map[K2]V2, len(in))
+
+	for k1 := range in {
+		k2, v2, err := iteratee(k1, in[k1])
+		if err != nil {
+			return nil, err
+		}
+		result[k2] = v2
+	}
+
+	return result, nil
+}
+
+func MapKeysErr[K comparable, V any, R comparable](in map[K]V, iteratee func(value V, key K) (R, error)) (map[R]V, error) {
+	result := make(map[R]V, len(in))
+
+	for k, v := range in {
+		r, err := iteratee(v, k)
+		if err != nil {
+			return nil, err
+		}
+		result[r] = v
+	}
+
+	return result, nil
+}
+
+func MapToSlice[K comparable, V, R any](in map[K]V, iteratee func(key K, value V) R) []R {
+	result := make([]R, 0, len(in))
+
+	for k, v := range in {
+		result = append(result, iteratee(k, v))
+	}
+
+	return result
+}
+
+func MapToSliceErr[K comparable, V, R any](in map[K]V, iteratee func(key K, value V) (R, error)) ([]R, error) {
+	result := make([]R, 0, len(in))
+
+	for k, v := range in {
+		r, err := iteratee(k, v)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, r)
+	}
+
+	return result, nil
+}
+
+func MapValuesErr[K comparable, V, R any](in map[K]V, iteratee func(value V, key K) (R, error)) (map[K]R, error) {
+	result := make(map[K]R, len(in))
+
+	for k, v := range in {
+		r, err := iteratee(v, k)
+		if err != nil {
+			return nil, err
+		}
+		result[k] = r
+	}
+
+	return result, nil
+}
+
+func OmitBy[K comparable, V any, Map ~map[K]V](in Map, predicate func(key K, value V) bool) Map {
+	r := Map{}
+	for k, v := range in {
+		if !predicate(k, v) {
+			r[k] = v
+		}
+	}
+	return r
+}
+
+func OmitByErr[K comparable, V any, Map ~map[K]V](in Map, predicate func(key K, value V) (bool, error)) (Map, error) {
+	r := Map{}
+	for k, v := range in {
+		ok, err := predicate(k, v)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			r[k] = v
+		}
+	}
+	return r, nil
+}
+
+func OmitByKeys[K comparable, V any, Map ~map[K]V](in Map, keys []K) Map {
+	r := Map{}
+	for k, v := range in {
+		r[k] = v
+	}
+	for i := range keys {
+		delete(r, keys[i])
+	}
+	return r
+}
+
+func OmitByValues[K, V comparable, Map ~map[K]V](in Map, values []V) Map {
+	r := Map{}
+
+	seen := Keyify(values)
+	for k, v := range in {
+		if _, ok := seen[v]; !ok {
+			r[k] = v
+		}
+	}
+
+	return r
+}
+
+func PickBy[K comparable, V any, Map ~map[K]V](in Map, predicate func(key K, value V) bool) Map {
+	r := Map{}
+	for k, v := range in {
+		if predicate(k, v) {
+			r[k] = v
+		}
+	}
+	return r
+}
+
+func PickByErr[K comparable, V any, Map ~map[K]V](in Map, predicate func(key K, value V) (bool, error)) (Map, error) {
+	r := Map{}
+	for k, v := range in {
+		ok, err := predicate(k, v)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			r[k] = v
+		}
+	}
+	return r, nil
+}
+
+func PickByKeys[K comparable, V any, Map ~map[K]V](in Map, keys []K) Map {
+	r := Map{}
+	for i := range keys {
+		if v, ok := in[keys[i]]; ok {
+			r[keys[i]] = v
+		}
+	}
+	return r
+}
+
+func PickByValues[K, V comparable, Map ~map[K]V](in Map, values []V) Map {
+	r := Map{}
+
+	seen := Keyify(values)
+	for k, v := range in {
+		if _, ok := seen[v]; ok {
+			r[k] = v
+		}
+	}
+	return r
+}
+
+func ToPairs[K comparable, V any](in map[K]V) []Entry[K, V] {
+	return Entries(in)
+}
+
+func UniqKeys[K comparable, V any](in ...map[K]V) []K {
+	size := 0
+	for i := range in {
+		size += len(in[i])
+	}
+
+	seen := make(map[K]struct{}, size)
+	result := make([]K, 0)
+
+	for i := range in {
+		for k := range in[i] {
+			if _, exists := seen[k]; exists {
+				continue
+			}
+			seen[k] = struct{}{}
+			result = append(result, k)
+		}
+	}
+
+	return result
+}
+
+func UniqValues[K, V comparable](in ...map[K]V) []V {
+	size := 0
+	for i := range in {
+		size += len(in[i])
+	}
+
+	seen := make(map[V]struct{}, size)
+	result := make([]V, 0)
+
+	for i := range in {
+		for _, v := range in[i] {
+			if _, exists := seen[v]; exists {
+				continue
+			}
+			seen[v] = struct{}{}
+			result = append(result, v)
+		}
+	}
+
+	return result
+}
+
+func ValueOr[K comparable, V any](in map[K]V, key K, fallback V) V {
+	if v, ok := in[key]; ok {
+		return v
+	}
+	return fallback
+}
