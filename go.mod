@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/samber/lo v1.53.0
-	goforge.dev/goplus/std v0.200.0
+	goforge.dev/goplus/std v0.207.0
 	golang.org/x/text v0.34.0
 )
 
